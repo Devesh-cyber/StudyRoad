@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { appCache } from '@/lib/cache';
 import { Loader2, CheckCircle, Circle, Trash2, Edit2, Check, X, Plus, Settings2, FileText, Save, BookOpen, Link as LinkIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AnalyticsBar } from '@/components/AnalyticsBar';
@@ -32,58 +33,94 @@ export const RoadmapView = ({ roadmapId, onBack, onDelete }: { roadmapId: string
   const [globalNoteContent, setGlobalNoteContent] = useState('');
   const [savingGlobalNote, setSavingGlobalNote] = useState(false);
 
+  const cacheKey = `roadmap_full_${roadmapId}`;
+
   useEffect(() => {
+    const fetchRoadmapData = async () => {
+      // Check cache first for zero-delay loading
+      const cached = appCache.get(cacheKey);
+      if (cached) {
+        setRoadmapTitle(cached.title);
+        setNewTitle(cached.title);
+        setTopics(cached.topics);
+        setTopicNotes(cached.topicNotes);
+        setGlobalNoteContent(cached.globalNoteContent);
+        setLoading(false);
+        return;
+      }
+
+      const { data: roadmapData } = await supabase
+        .from('roadmaps')
+        .select('title')
+        .eq('id', roadmapId)
+        .single();
+      
+      if (roadmapData) {
+        setRoadmapTitle(roadmapData.title);
+        setNewTitle(roadmapData.title);
+      }
+
+      const { data, error } = await supabase
+        .from('topics')
+        .select(`
+          id, title, sort_order,
+          subtopics ( id, title, sort_order, status ),
+          notes ( content )
+        `)
+        .eq('roadmap_id', roadmapId)
+        .order('sort_order', { ascending: true });
+
+      let loadedTopics = [];
+      if (error) console.error("Error fetching roadmap:", error);
+      
+      if (data) {
+        data.forEach(topic => {
+          topic.subtopics.sort((a: any, b: any) => a.sort_order - b.sort_order);
+        });
+        loadedTopics = data;
+        setTopics(data);
+
+        const notesMap: { [key: string]: string } = {};
+        data.forEach(t => {
+          notesMap[t.id] = t.notes?.[0]?.content || '';
+        });
+        setTopicNotes(notesMap);
+      }
+
+      const { data: globalData } = await supabase
+        .from('global_notes')
+        .select('content')
+        .eq('roadmap_id', roadmapId)
+        .single();
+
+      let loadedGlobalNotes = '';
+      if (globalData) {
+        loadedGlobalNotes = globalData.content || '';
+        setGlobalNoteContent(loadedGlobalNotes);
+      }
+
+      // Save to cache
+      appCache.set(cacheKey, {
+        title: roadmapData?.title || '',
+        topics: loadedTopics,
+        topicNotes: topics,
+        globalNoteContent: loadedGlobalNotes
+      });
+
+      setLoading(false);
+    };
+
     fetchRoadmapData();
   }, [roadmapId]);
 
-  const fetchRoadmapData = async () => {
-    const { data: roadmapData } = await supabase
-      .from('roadmaps')
-      .select('title')
-      .eq('id', roadmapId)
-      .single();
-    
-    if (roadmapData) {
-      setRoadmapTitle(roadmapData.title);
-      setNewTitle(roadmapData.title);
-    }
-
-    const { data, error } = await supabase
-      .from('topics')
-      .select(`
-        id, title, sort_order,
-        subtopics ( id, title, sort_order, status ),
-        notes ( content )
-      `)
-      .eq('roadmap_id', roadmapId)
-      .order('sort_order', { ascending: true });
-
-    if (error) console.error("Error fetching roadmap:", error);
-    
-    if (data) {
-      data.forEach(topic => {
-        topic.subtopics.sort((a: any, b: any) => a.sort_order - b.sort_order);
-      });
-      setTopics(data);
-
-      const notesMap: { [key: string]: string } = {};
-      data.forEach(t => {
-        notesMap[t.id] = t.notes?.[0]?.content || '';
-      });
-      setTopicNotes(notesMap);
-    }
-
-    const { data: globalData } = await supabase
-      .from('global_notes')
-      .select('content')
-      .eq('roadmap_id', roadmapId)
-      .single();
-
-    if (globalData) {
-      setGlobalNoteContent(globalData.content || '');
-    }
-
-    setLoading(false);
+  const updateCache = (newTopics: any[], newNotes = topicNotes, newGlobal = globalNoteContent, newTitleText = roadmapTitle) => {
+    appCache.set(cacheKey, {
+      title: newTitleText,
+      topics: newTopics,
+      topicNotes: newNotes,
+      globalNoteContent: newGlobal
+    });
+    appCache.invalidate('dashboard_roadmaps'); // Invalidate dashboard list cache to reflect progress changes
   };
 
   const handleUpdateRoadmapTitle = async () => {
@@ -92,13 +129,18 @@ export const RoadmapView = ({ roadmapId, onBack, onDelete }: { roadmapId: string
     if (!error) {
       setRoadmapTitle(newTitle);
       setIsEditingTitle(false);
+      updateCache(topics, topicNotes, globalNoteContent, newTitle);
     }
   };
 
   const handleDeleteRoadmap = async () => {
     if (!confirm('Are you sure you want to delete this roadmap and all its progress?')) return;
     const { error } = await supabase.from('roadmaps').delete().eq('id', roadmapId);
-    if (!error) onDelete();
+    if (!error) {
+      appCache.invalidate(cacheKey);
+      appCache.invalidate('dashboard_roadmaps');
+      onDelete();
+    }
   };
 
   const handleSaveTopicNote = async (topicId: string) => {
@@ -112,6 +154,7 @@ export const RoadmapView = ({ roadmapId, onBack, onDelete }: { roadmapId: string
       await supabase.from('notes').insert({ topic_id: topicId, content });
     }
     setSavingTopicId(null);
+    updateCache(topics, topicNotes, globalNoteContent);
   };
 
   const handleSaveGlobalNote = async () => {
@@ -124,6 +167,7 @@ export const RoadmapView = ({ roadmapId, onBack, onDelete }: { roadmapId: string
       await supabase.from('global_notes').insert({ roadmap_id: roadmapId, content: globalNoteContent });
     }
     setSavingGlobalNote(false);
+    updateCache(topics, topicNotes, globalNoteContent);
   };
 
   const handleAddTopic = async () => {
@@ -135,23 +179,29 @@ export const RoadmapView = ({ roadmapId, onBack, onDelete }: { roadmapId: string
       .select();
 
     if (!error && data) {
-      setTopics([...topics, { ...data[0], subtopics: [], notes: [] }]);
+      const updated = [...topics, { ...data[0], subtopics: [], notes: [] }];
+      setTopics(updated);
       setNewTopicTitle('');
       setIsAddingTopic(false);
+      updateCache(updated);
     }
   };
 
   const handleUpdateTopic = async (topicId: string) => {
     if (!topicEditText.trim()) return;
     await supabase.from('topics').update({ title: topicEditText }).eq('id', topicId);
-    setTopics(topics.map(t => t.id === topicId ? { ...t, title: topicEditText } : t));
+    const updated = topics.map(t => t.id === topicId ? { ...t, title: topicEditText } : t);
+    setTopics(updated);
     setEditingTopicId(null);
+    updateCache(updated);
   };
 
   const handleDeleteTopic = async (topicId: string) => {
     if (!confirm('Delete this topic and all its subtopics?')) return;
     await supabase.from('topics').delete().eq('id', topicId);
-    setTopics(topics.filter(t => t.id !== topicId));
+    const updated = topics.filter(t => t.id !== topicId);
+    setTopics(updated);
+    updateCache(updated);
   };
 
   const handleAddSubtopic = async (topicId: string) => {
@@ -167,21 +217,23 @@ export const RoadmapView = ({ roadmapId, onBack, onDelete }: { roadmapId: string
       .select();
 
     if (!error && data) {
-      setTopics(topics.map(t => {
+      const updated = topics.map(t => {
         if (t.id === topicId) {
           return { ...t, subtopics: [...t.subtopics, data[0]] };
         }
         return t;
-      }));
+      });
+      setTopics(updated);
       setNewSubtopicText({ ...newSubtopicText, [topicId]: '' });
       setAddingSubtopicToTopic(null);
+      updateCache(updated);
     }
   };
 
   const handleUpdateSubtopic = async (subtopicId: string, topicId: string) => {
     if (!subtopicEditText.trim()) return;
     await supabase.from('subtopics').update({ title: subtopicEditText }).eq('id', subtopicId);
-    setTopics(topics.map(t => {
+    const updated = topics.map(t => {
       if (t.id === topicId) {
         return {
           ...t,
@@ -189,13 +241,15 @@ export const RoadmapView = ({ roadmapId, onBack, onDelete }: { roadmapId: string
         };
       }
       return t;
-    }));
+    });
+    setTopics(updated);
     setEditingSubtopicId(null);
+    updateCache(updated);
   };
 
   const handleDeleteSubtopic = async (subtopicId: string, topicId: string) => {
     await supabase.from('subtopics').delete().eq('id', subtopicId);
-    setTopics(topics.map(t => {
+    const updated = topics.map(t => {
       if (t.id === topicId) {
         return {
           ...t,
@@ -203,12 +257,14 @@ export const RoadmapView = ({ roadmapId, onBack, onDelete }: { roadmapId: string
         };
       }
       return t;
-    }));
+    });
+    setTopics(updated);
+    updateCache(updated);
   };
 
   const toggleSubtopic = async (subtopicId: string, topicId: string, currentStatus: string) => {
     const newStatus = currentStatus === 'COMPLETED' ? 'NOT_STARTED' : 'COMPLETED';
-    setTopics(topics.map(t => {
+    const updated = topics.map(t => {
       if (t.id === topicId) {
         return {
           ...t,
@@ -216,7 +272,9 @@ export const RoadmapView = ({ roadmapId, onBack, onDelete }: { roadmapId: string
         };
       }
       return t;
-    }));
+    });
+    setTopics(updated);
+    updateCache(updated);
     await supabase.from('subtopics').update({ status: newStatus }).eq('id', subtopicId);
   };
 

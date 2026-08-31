@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/authContext';
+import { appCache } from '@/lib/cache';
 import { Book, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -12,7 +13,19 @@ export const Dashboard = ({ onImportNew, onOpenRoadmap }: { onImportNew: () => v
     const fetchRoadmapsWithProgress = async () => {
       if (!user) return;
 
-      // Fetch roadmaps along with their topics and nested subtopics
+      // Check cache first for instant dashboard rendering
+      const cached = appCache.get('dashboard_roadmaps');
+      if (cached) {
+        setRoadmaps(cached);
+        // Silently refresh in the background
+        fetchAndProcessRoadmaps(false);
+        return;
+      }
+
+      await fetchAndProcessRoadmaps(true);
+    };
+
+    const fetchAndProcessRoadmaps = async (updateState: boolean) => {
       const { data, error } = await supabase
         .from('roadmaps')
         .select(`
@@ -27,7 +40,6 @@ export const Dashboard = ({ onImportNew, onOpenRoadmap }: { onImportNew: () => v
       if (error) {
         console.error('Error fetching dashboard roadmaps:', error);
       } else if (data) {
-        // Calculate progress metrics for each roadmap card
         const processed = data.map(map => {
           let total = 0;
           let completed = 0;
@@ -43,7 +55,10 @@ export const Dashboard = ({ onImportNew, onOpenRoadmap }: { onImportNew: () => v
           return { ...map, total, completed, percentage };
         });
 
-        setRoadmaps(processed);
+        appCache.set('dashboard_roadmaps', processed);
+        if (updateState) {
+          setRoadmaps(processed);
+        }
       }
     };
 
