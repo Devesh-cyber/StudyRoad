@@ -2,54 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { CalendarPlus, Check, Flame, Trophy } from 'lucide-react'
 import type { RoadmapEditor } from '@/hooks/useRoadmapEditor'
 import type { NodeRow } from '@/lib/types'
+import { challengeDays, computeStreaks, dateOfDay as dayDate } from '@/lib/challenge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-
-const DAY_MS = 86_400_000
-
-const parseLocalDate = (s: string) => {
-  const [y, m, d] = s.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
-const startOfToday = () => {
-  const t = new Date()
-  return new Date(t.getFullYear(), t.getMonth(), t.getDate())
-}
-
-export interface Streaks {
-  current: number
-  longest: number
-  todayIdx: number // 1-based day number for today (may be <1 or > length)
-}
-
-/** Current streak counts back from today (or yesterday, if today isn't ticked yet). */
-export function computeStreaks(days: NodeRow[], start: string): Streaks {
-  const todayIdx = Math.round((startOfToday().getTime() - parseLocalDate(start).getTime()) / DAY_MS) + 1
-  const done = new Set(days.filter((d) => d.is_done).map((d) => d.day_number!))
-
-  let longest = 0
-  let run = 0
-  for (let i = 1; i <= Math.min(todayIdx, days.length); i++) {
-    run = done.has(i) ? run + 1 : 0
-    longest = Math.max(longest, run)
-  }
-
-  let current = 0
-  let i = done.has(todayIdx) ? todayIdx : todayIdx - 1
-  while (i >= 1 && done.has(i)) {
-    current++
-    i--
-  }
-  return { current, longest, todayIdx }
-}
 
 export function ChallengeView({ editor }: { editor: RoadmapEditor }) {
   const { roadmap, nodes } = editor.data!
   const start = roadmap.challenge_start_date!
-  const days = useMemo(
-    () => nodes.filter((n) => n.day_number !== null).sort((a, b) => a.day_number! - b.day_number!),
-    [nodes],
-  )
+  const days = useMemo(() => challengeDays(nodes), [nodes])
   const { current, longest, todayIdx } = computeStreaks(days, start)
   const [selected, setSelected] = useState(() => Math.min(Math.max(todayIdx, 1), days.length))
   const day = days.find((d) => d.day_number === selected)
@@ -58,12 +18,7 @@ export function ChallengeView({ editor }: { editor: RoadmapEditor }) {
   const [extending, setExtending] = useState(false)
   const [extendTo, setExtendTo] = useState((roadmap.challenge_days ?? days.length) + 50)
 
-  const dateOf = (n: number) =>
-    new Date(parseLocalDate(start).getTime() + (n - 1) * DAY_MS).toLocaleDateString(undefined, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-    })
+  const dateOf = (n: number) => dayDate(start, n)
 
   return (
     <div className="space-y-4">

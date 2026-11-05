@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider, notifyManager } from '@tanstack/react
 import { AuthProvider } from '@/lib/authContext'
 import { ToastProvider } from '@/lib/toast'
 import { ShellLayout } from '@/components/ShellLayout'
-import { DashboardPage } from '@/pages/DashboardPage'
+import { TodayPage } from '@/pages/TodayPage'
 import { NewRoadmapPage } from '@/pages/NewRoadmapPage'
 import { RoadmapPage } from '@/pages/RoadmapPage'
 import './index.css'
@@ -29,7 +29,7 @@ ReactDOM.createRoot(rootElement!).render(
         <BrowserRouter>
           <ShellLayout>
             <Routes>
-              <Route path="/" element={<DashboardPage />} />
+              <Route path="/" element={<TodayPage />} />
               <Route path="/new" element={<NewRoadmapPage />} />
               <Route path="/r/:id" element={<RoadmapPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />

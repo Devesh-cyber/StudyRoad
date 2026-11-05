@@ -20,6 +20,9 @@ interface Props {
   editor: RoadmapEditor
   onOpenDetails: (id: string) => void
   onSmartAdd: (parentId: string | null) => void
+  /** Show only the subtree under this node (road view's side panel). null = whole roadmap. */
+  rootId?: string | null
+  showFocusBanner?: boolean
 }
 
 const loadCollapsed = (roadmapId: string): Set<string> => {
@@ -30,7 +33,7 @@ const loadCollapsed = (roadmapId: string): Set<string> => {
   }
 }
 
-export function OutlineEditor({ editor, onOpenDetails, onSmartAdd }: Props) {
+export function OutlineEditor({ editor, onOpenDetails, onSmartAdd, rootId = null, showFocusBanner = true }: Props) {
   const { roadmap, nodes } = editor.data!
   const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed(roadmap.id))
   const [drag, setDrag] = useState<{ id: string; over: { id: string; zone: DropZone } | null } | null>(null)
@@ -44,7 +47,7 @@ export function OutlineEditor({ editor, onOpenDetails, onSmartAdd }: Props) {
     }
   }, [collapsed, roadmap.id])
 
-  const rows = useMemo(() => visibleRows(nodes, collapsed), [nodes, collapsed])
+  const rows = useMemo(() => visibleRows(nodes, collapsed, rootId), [nodes, collapsed, rootId])
   const progress = useMemo(() => progressMap(nodes), [nodes])
   const focusNode = roadmap.focus_node_id ? nodes.find((n) => n.id === roadmap.focus_node_id) : undefined
 
@@ -112,6 +115,8 @@ export function OutlineEditor({ editor, onOpenDetails, onSmartAdd }: Props) {
     },
     outdent: (id, title) => {
       latest.current.commitTitle(id, title)
+      // In a scoped panel, items can't be pushed out of the stop they belong to.
+      if (rootId && editor.getNodes().find((n) => n.id === id)?.parent_id === rootId) return
       const p = outdentPatch(editor.getNodes(), id)
       if (!p) return
       editor.updateNode(id, p)
@@ -180,11 +185,11 @@ export function OutlineEditor({ editor, onOpenDetails, onSmartAdd }: Props) {
     [],
   )
 
-  const addTopLevel = () => requestFocus(editor.createNode(null, positionLastChild(editor.getNodes(), null)))
+  const addTopLevel = () => requestFocus(editor.createNode(rootId, positionLastChild(editor.getNodes(), rootId)))
 
   return (
     <div className="space-y-3">
-      {focusNode && (
+      {showFocusBanner && focusNode && (
         <button
           onClick={() => jumpTo(focusNode.id)}
           className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-300/30 bg-amber-300/5 text-left cursor-pointer hover:bg-amber-300/10 transition-colors"
@@ -209,7 +214,7 @@ export function OutlineEditor({ editor, onOpenDetails, onSmartAdd }: Props) {
               <button onClick={addTopLevel} className="px-3 py-1.5 rounded-md bg-zinc-800 text-sm text-zinc-200 hover:bg-zinc-700 cursor-pointer">
                 Add first item
               </button>
-              <button onClick={() => onSmartAdd(null)} className="px-3 py-1.5 rounded-md border border-zinc-700 text-sm text-zinc-300 hover:bg-zinc-800 cursor-pointer flex items-center gap-1.5">
+              <button onClick={() => onSmartAdd(rootId)} className="px-3 py-1.5 rounded-md border border-zinc-700 text-sm text-zinc-300 hover:bg-zinc-800 cursor-pointer flex items-center gap-1.5">
                 <Sparkles className="h-3.5 w-3.5" /> Smart add
               </button>
             </div>
@@ -227,6 +232,7 @@ export function OutlineEditor({ editor, onOpenDetails, onSmartAdd }: Props) {
               dropZone={drag?.over?.id === r.node.id && drag.id !== r.node.id ? drag.over.zone : null}
               dragging={drag?.id === r.node.id}
               flash={flashId === r.node.id}
+              canOutdent={rootId ? r.node.parent_id !== rootId : !!r.node.parent_id}
               actions={actions}
             />
           ))
@@ -237,7 +243,7 @@ export function OutlineEditor({ editor, onOpenDetails, onSmartAdd }: Props) {
             <button onClick={addTopLevel} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 cursor-pointer">
               <Plus className="h-4 w-4" /> Add item
             </button>
-            <button onClick={() => onSmartAdd(null)} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 cursor-pointer">
+            <button onClick={() => onSmartAdd(rootId)} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 cursor-pointer">
               <Sparkles className="h-3.5 w-3.5" /> Smart add
             </button>
           </div>

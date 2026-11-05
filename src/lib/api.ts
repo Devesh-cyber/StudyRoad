@@ -163,3 +163,10 @@ export async function deleteLink(id: string): Promise<void> {
   const { error } = await supabase.from('node_links').delete().eq('id', id)
   if (error) throw error
 }
+
+/** Every node of the user's roadmaps (RLS limits it to their own). Used by the Today page. */
+export async function fetchAllNodes(): Promise<NodeRow[]> {
+  const { data, error } = await supabase.from('nodes').select('*')
+  if (error) throw error
+  return data as NodeRow[]
+}

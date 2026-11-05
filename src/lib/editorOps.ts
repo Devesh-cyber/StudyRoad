@@ -67,7 +67,7 @@ export interface VisibleRow {
 }
 
 /** Depth-first order of rows that are not hidden inside a collapsed parent. */
-export function visibleRows(nodes: NodeRow[], collapsed: Set<string>): VisibleRow[] {
+export function visibleRows(nodes: NodeRow[], collapsed: Set<string>, rootId: string | null = null): VisibleRow[] {
   const kids = new Map<string | null, NodeRow[]>()
   for (const n of nodes) {
     const k = n.parent_id
@@ -84,7 +84,7 @@ export function visibleRows(nodes: NodeRow[], collapsed: Set<string>): VisibleRo
       if (hc && !collapsed.has(n.id)) walk(n.id, depth + 1)
     }
   }
-  walk(null, 0)
+  walk(rootId, 0)
   return out
 }
 

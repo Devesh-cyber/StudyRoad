@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ClipboardCopy, Loader2, NotebookPen, Trash2 } from 'lucide-react'
+import { ClipboardCopy, ListTree, Loader2, NotebookPen, Route, Trash2 } from 'lucide-react'
 import { useRoadmapEditor, type RoadmapEditor } from '@/hooks/useRoadmapEditor'
 import { deleteRoadmap } from '@/lib/api'
 import { overallProgress, toMarkdown } from '@/lib/editorOps'
@@ -12,6 +12,8 @@ import { NodeDrawer } from '@/components/editor/NodeDrawer'
 import { SmartAddDialog } from '@/components/editor/SmartAddDialog'
 import { ItemMenu } from '@/components/editor/ItemMenu'
 import { ChallengeView } from '@/components/challenge/ChallengeView'
+import { RoadView } from '@/components/road/RoadView'
+import { cn } from '@/lib/utils'
 
 export function RoadmapPage() {
   const { id = '' } = useParams()
@@ -26,6 +28,21 @@ function RoadmapScreen({ id }: { id: string }) {
   const [detailsId, setDetailsId] = useState<string | null>(null)
   const [smartAddParent, setSmartAddParent] = useState<string | null | undefined>(undefined) // undefined = closed
   const closeDetails = useCallback(() => setDetailsId(null), [])
+  const [view, setViewState] = useState<'road' | 'outline'>(() => {
+    try {
+      return localStorage.getItem(`sr:view:${id}`) === 'outline' ? 'outline' : 'road'
+    } catch {
+      return 'road'
+    }
+  })
+  const setView = (v: 'road' | 'outline') => {
+    setViewState(v)
+    try {
+      localStorage.setItem(`sr:view:${id}`, v)
+    } catch {
+      /* not persisted */
+    }
+  }
 
   if (query.isLoading)
     return (
@@ -36,7 +53,7 @@ function RoadmapScreen({ id }: { id: string }) {
   if (query.error || !data)
     return (
       <div className="space-y-4">
-        <Link to="/" className="text-sm text-zinc-400 hover:text-zinc-200">← Dashboard</Link>
+        <Link to="/" className="text-sm text-zinc-400 hover:text-zinc-200">← Today</Link>
         <div className="p-4 rounded-lg border border-red-900 bg-red-950/40 text-red-300 text-sm">
           Couldn't load this roadmap{query.error ? `: ${(query.error as Error).message}` : ''}
         </div>
@@ -44,11 +61,13 @@ function RoadmapScreen({ id }: { id: string }) {
     )
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5 pb-24">
-      <Header editor={editor} />
+    <div className={cn('mx-auto space-y-6 pb-24', data.roadmap.kind === 'tree' && view === 'road' ? 'max-w-6xl' : 'max-w-3xl')}>
+      <Header editor={editor} view={data.roadmap.kind === 'tree' ? view : null} onViewChange={setView} />
 
       {data.roadmap.kind === 'challenge' ? (
         <ChallengeView editor={editor} />
+      ) : view === 'road' ? (
+        <RoadView editor={editor} onOpenDetails={setDetailsId} onSmartAdd={(p) => setSmartAddParent(p)} />
       ) : (
         <OutlineEditor editor={editor} onOpenDetails={setDetailsId} onSmartAdd={(p) => setSmartAddParent(p)} />
       )}
@@ -66,7 +85,7 @@ function RoadmapScreen({ id }: { id: string }) {
   )
 }
 
-function Header({ editor }: { editor: RoadmapEditor }) {
+function Header({ editor, view, onViewChange }: { editor: RoadmapEditor; view: 'road' | 'outline' | null; onViewChange: (v: 'road' | 'outline') => void }) {
   const { roadmap, nodes } = editor.data!
   const navigate = useNavigate()
   const qc = useQueryClient()
@@ -105,8 +124,26 @@ function Header({ editor }: { editor: RoadmapEditor }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <Link to="/" className="text-sm text-zinc-400 hover:text-zinc-200">← Dashboard</Link>
+        <Link to="/" className="text-sm text-zinc-400 hover:text-zinc-200">← Today</Link>
         <div className="flex items-center gap-1">
+          {view && (
+            <div role="group" aria-label="View" className="flex p-0.5 mr-1 rounded-lg bg-zinc-900 border border-zinc-800">
+              {(['road', 'outline'] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => onViewChange(v)}
+                  aria-pressed={view === v}
+                  className={cn(
+                    'h-8 px-2.5 rounded-md text-sm inline-flex items-center gap-1.5 cursor-pointer transition-colors',
+                    view === v ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300',
+                  )}
+                >
+                  {v === 'road' ? <Route className="h-4 w-4" /> : <ListTree className="h-4 w-4" />}
+                  <span className="hidden sm:inline">{v === 'road' ? 'Road' : 'Outline'}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <button
             onClick={() => setNotesOpen(!notesOpen)}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 cursor-pointer"
@@ -141,7 +178,7 @@ function Header({ editor }: { editor: RoadmapEditor }) {
         }}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
         aria-label="Roadmap title"
-        className="w-full bg-transparent text-3xl font-bold text-zinc-100 focus:outline-none"
+        className="w-full bg-transparent font-display text-4xl font-bold tracking-tight text-zinc-100 focus:outline-none"
       />
       <input
         value={description}

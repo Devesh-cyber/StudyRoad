@@ -1,7 +1,51 @@
 @import "tailwindcss";
 
+/*
+ * StudyRoad visual system
+ *  - ground: near-black #0F1012, surfaces step up from it
+ *  - ONE accent: lane yellow #F5C542 (Tailwind's amber scale is remapped to it,
+ *    so every `amber-*` class in the app uses the road colour)
+ *  - type: Space Grotesk for titles/numbers (font-display), DM Sans for body
+ *  - greys used for small text are lifted so they pass 4.5:1 on the ground
+ */
+@theme {
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Space Grotesk', 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+
+  --color-amber-100: #FBE7B0;
+  --color-amber-200: #F8D677;
+  --color-amber-300: #F5C542;
+  --color-amber-400: #F5C542;
+  --color-amber-500: #D9AB2E;
+  --color-amber-700: #6B5517;
+  --color-amber-900: #4D4120;
+  --color-amber-950: #1F1B0E;
+
+  --color-zinc-100: #F1F1F3;
+  --color-zinc-200: #E2E2E6;
+  --color-zinc-300: #C9C9CF;
+  --color-zinc-400: #A3A4AB;
+  --color-zinc-500: #8C8D95;
+  --color-zinc-600: #7A7B83;
+  --color-zinc-700: #3A3B42;
+  --color-zinc-800: #26272C;
+  --color-zinc-900: #16171A;
+  --color-zinc-950: #0F1012;
+
+  --color-road: #1C1D21;
+  --color-passed: #8FD1A0;
+}
+
 html, body, #root, #app {
   height: 100%;
-  background-color: #09090b; /* zinc-950 */
-  color: #e4e4e7; /* zinc-200 */
+  background-color: #0F1012;
+  color: #E2E2E6;
+  font-family: var(--font-sans);
 }
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+::selection { background: rgba(245, 197, 66, 0.3); }

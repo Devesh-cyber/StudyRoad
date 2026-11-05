@@ -57,6 +57,7 @@ interface Props {
   dropZone: DropZone | null // highlight when something is dragged over this row
   dragging: boolean
   flash: boolean
+  canOutdent: boolean
   actions: RowActions
 }
 
@@ -94,6 +95,7 @@ export const OutlineRow = memo(function OutlineRow({
   dropZone,
   dragging,
   flash,
+  canOutdent,
   actions,
 }: Props) {
   const [value, setValue] = useState(node.title)
@@ -254,7 +256,7 @@ export const OutlineRow = memo(function OutlineRow({
               { label: 'Move up', icon: ArrowUp, onClick: () => actions.moveUp(node.id), divider: true },
               { label: 'Move down', icon: ArrowDown, onClick: () => actions.moveDown(node.id) },
               { label: 'Indent', icon: IndentIncrease, onClick: () => actions.indent(node.id, value) },
-              { label: 'Outdent', icon: IndentDecrease, onClick: () => actions.outdent(node.id, value), disabled: !node.parent_id },
+              { label: 'Outdent', icon: IndentDecrease, onClick: () => actions.outdent(node.id, value), disabled: !canOutdent },
               { label: 'Delete', icon: Trash2, onClick: () => actions.remove(node.id), danger: true, divider: true },
             ]}
           />

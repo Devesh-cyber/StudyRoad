@@ -168,7 +168,7 @@ export function NewRoadmapPage() {
     <div className="max-w-3xl mx-auto space-y-6 pb-16">
       <div className="flex items-center justify-between">
         <Link to="/" className="text-sm text-zinc-400 hover:text-zinc-200">
-          ← Dashboard
+          ← Today
         </Link>
       </div>
       <h2 className="text-2xl font-bold text-zinc-100">New roadmap</h2>

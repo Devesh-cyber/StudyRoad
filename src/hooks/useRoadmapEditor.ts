@@ -77,6 +77,7 @@ export function useRoadmapEditor(roadmapId: string) {
     try {
       await remote()
       qc.invalidateQueries({ queryKey: ['summaries'] })
+      qc.invalidateQueries({ queryKey: ['all-nodes'] })
     } catch (e) {
       if (snapshot) qc.setQueryData(key, snapshot)
       toast.error(`${failMsg}: ${(e as Error).message}`)
@@ -204,6 +205,7 @@ export function useRoadmapEditor(roadmapId: string) {
         await waitFor([...subtree])
         await deleteNodes([id]) // cascades to the subtree
         qc.invalidateQueries({ queryKey: ['summaries'] })
+      qc.invalidateQueries({ queryKey: ['all-nodes'] })
       } catch (e) {
         restore()
         toast.error(`Couldn't delete: ${(e as Error).message}`)
@@ -276,6 +278,7 @@ export function useRoadmapEditor(roadmapId: string) {
       await extendChallenge(roadmapId, newDays)
       await qc.invalidateQueries({ queryKey: key })
       qc.invalidateQueries({ queryKey: ['summaries'] })
+      qc.invalidateQueries({ queryKey: ['all-nodes'] })
     } catch (e) {
       toast.error(`Couldn't extend: ${(e as Error).message}`)
     }
