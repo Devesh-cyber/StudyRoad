@@ -1,166 +1,178 @@
-// TEMPORARY read-only view — replaced by the full outline editor in the next step.
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, ChevronDown, ChevronRight, Circle, Loader2, Star, Trash2 } from 'lucide-react'
-import { deleteRoadmap, fetchRoadmap } from '@/lib/api'
-import { buildTree, isDone, percent, progressOf, progressOfList, type TreeNode } from '@/lib/tree'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ClipboardCopy, Loader2, NotebookPen, Trash2 } from 'lucide-react'
+import { useRoadmapEditor, type RoadmapEditor } from '@/hooks/useRoadmapEditor'
+import { deleteRoadmap } from '@/lib/api'
+import { overallProgress, toMarkdown } from '@/lib/editorOps'
+import { useToast } from '@/lib/toast'
 import { ProgressBar } from '@/components/ProgressBar'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { OutlineEditor } from '@/components/editor/OutlineEditor'
+import { NodeDrawer } from '@/components/editor/NodeDrawer'
+import { SmartAddDialog } from '@/components/editor/SmartAddDialog'
+import { ItemMenu } from '@/components/editor/ItemMenu'
+import { ChallengeView } from '@/components/challenge/ChallengeView'
 
 export function RoadmapPage() {
   const { id = '' } = useParams()
-  const navigate = useNavigate()
-  const qc = useQueryClient()
-  const { data, isLoading, error } = useQuery({ queryKey: ['roadmap', id], queryFn: () => fetchRoadmap(id) })
+  // key by id so all editor state resets when switching roadmaps
+  return <RoadmapScreen key={id} id={id} />
+}
 
-  const del = useMutation({
-    mutationFn: () => deleteRoadmap(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['summaries'] })
-      qc.removeQueries({ queryKey: ['roadmap', id] })
-      navigate('/')
-    },
-  })
+function RoadmapScreen({ id }: { id: string }) {
+  const editor = useRoadmapEditor(id)
+  const { data, query } = { data: editor.data, query: editor.query }
 
-  if (isLoading)
+  const [detailsId, setDetailsId] = useState<string | null>(null)
+  const [smartAddParent, setSmartAddParent] = useState<string | null | undefined>(undefined) // undefined = closed
+  const closeDetails = useCallback(() => setDetailsId(null), [])
+
+  if (query.isLoading)
     return (
       <div className="flex justify-center p-12">
         <Loader2 className="animate-spin h-6 w-6 text-zinc-500" />
       </div>
     )
-  if (error || !data)
+  if (query.error || !data)
     return (
       <div className="space-y-4">
         <Link to="/" className="text-sm text-zinc-400 hover:text-zinc-200">← Dashboard</Link>
         <div className="p-4 rounded-lg border border-red-900 bg-red-950/40 text-red-300 text-sm">
-          Couldn't load this roadmap{error ? `: ${(error as Error).message}` : ''}
+          Couldn't load this roadmap{query.error ? `: ${(query.error as Error).message}` : ''}
         </div>
       </div>
     )
 
-  const { roadmap, nodes } = data
-  const tree = buildTree(nodes)
-  const overall = progressOfList(tree)
+  return (
+    <div className="max-w-3xl mx-auto space-y-5 pb-24">
+      <Header editor={editor} />
+
+      {data.roadmap.kind === 'challenge' ? (
+        <ChallengeView editor={editor} />
+      ) : (
+        <OutlineEditor editor={editor} onOpenDetails={setDetailsId} onSmartAdd={(p) => setSmartAddParent(p)} />
+      )}
+
+      {detailsId && <NodeDrawer editor={editor} nodeId={detailsId} onClose={closeDetails} />}
+      {smartAddParent !== undefined && (
+        <SmartAddDialog
+          editor={editor}
+          parentId={smartAddParent}
+          onClose={() => setSmartAddParent(undefined)}
+          onAdded={() => {}}
+        />
+      )}
+    </div>
+  )
+}
+
+function Header({ editor }: { editor: RoadmapEditor }) {
+  const { roadmap, nodes } = editor.data!
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const toast = useToast()
+
+  const [title, setTitle] = useState(roadmap.title)
+  const [description, setDescription] = useState(roadmap.description ?? '')
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [notes, setNotes] = useState(roadmap.notes)
+  useEffect(() => setTitle(roadmap.title), [roadmap.title])
+  useEffect(() => setDescription(roadmap.description ?? ''), [roadmap.description])
+  useEffect(() => setNotes(roadmap.notes), [roadmap.notes])
+
+  const progress = overallProgress(roadmap.kind === 'challenge' ? nodes.filter((n) => n.day_number !== null) : nodes)
+  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0
+
+  const del = useMutation({
+    mutationFn: () => deleteRoadmap(roadmap.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['summaries'] })
+      qc.removeQueries({ queryKey: ['roadmap', roadmap.id] })
+      navigate('/')
+    },
+    onError: (e) => toast.error(`Couldn't delete: ${(e as Error).message}`),
+  })
+
+  const exportMd = async () => {
+    try {
+      await navigator.clipboard.writeText(toMarkdown(roadmap.title, nodes))
+      toast.show('Copied as markdown. Paste it into ChatGPT, or back into StudyRoad.')
+    } catch {
+      toast.error("Couldn't copy to clipboard")
+    }
+  }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-16">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <Link to="/" className="text-sm text-zinc-400 hover:text-zinc-200">← Dashboard</Link>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-zinc-500 hover:text-red-400"
-          disabled={del.isPending}
-          onClick={() => {
-            if (confirm(`Delete "${roadmap.title}" and all its progress?`)) del.mutate()
-          }}
-        >
-          <Trash2 className="h-4 w-4 mr-1.5" /> Delete
-        </Button>
-      </div>
-
-      <div className="space-y-3">
-        <h2 className="text-3xl font-bold text-zinc-100">{roadmap.title}</h2>
-        {roadmap.description && <p className="text-zinc-400">{roadmap.description}</p>}
-        <div className="flex items-center gap-3">
-          <div className="flex-1"><ProgressBar value={percent(overall)} /></div>
-          <span className="text-sm text-zinc-300 tabular-nums">
-            {overall.done}/{overall.total} · {percent(overall)}%
-          </span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setNotesOpen(!notesOpen)}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 cursor-pointer"
+          >
+            <NotebookPen className="h-4 w-4" /> Notes
+          </button>
+          <ItemMenu
+            label="Roadmap actions"
+            items={[
+              ...(roadmap.kind === 'tree' ? [{ label: 'Copy as markdown', icon: ClipboardCopy, onClick: exportMd }] : []),
+              {
+                label: 'Delete roadmap',
+                icon: Trash2,
+                danger: true,
+                divider: roadmap.kind === 'tree',
+                onClick: () => {
+                  if (confirm(`Delete "${roadmap.title}" and all its progress? This can't be undone.`)) del.mutate()
+                },
+              },
+            ]}
+          />
         </div>
       </div>
 
-      <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/60 text-xs text-zinc-500">
-        Read-only preview. Editing, ticking and ★ focus arrive with the outline editor (next step).
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onBlur={() => {
+          const t = title.trim()
+          if (!t) setTitle(roadmap.title)
+          else if (t !== roadmap.title) editor.patchRoadmap({ title: t })
+        }}
+        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+        aria-label="Roadmap title"
+        className="w-full bg-transparent text-3xl font-bold text-zinc-100 focus:outline-none"
+      />
+      <input
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        onBlur={() => (description.trim() || null) !== roadmap.description && editor.patchRoadmap({ description: description.trim() || null })}
+        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+        placeholder="Add a description…"
+        aria-label="Roadmap description"
+        className="w-full bg-transparent text-zinc-400 focus:outline-none placeholder:text-zinc-700"
+      />
+
+      <div className="flex items-center gap-3">
+        <div className="flex-1"><ProgressBar value={pct} /></div>
+        <span className="text-sm text-zinc-300 tabular-nums">
+          {progress.done}/{progress.total} · {pct}%
+        </span>
       </div>
 
-      {roadmap.kind === 'challenge' ? (
-        <ChallengeGrid nodes={nodes} start={roadmap.challenge_start_date} />
-      ) : tree.length === 0 ? (
-        <div className="p-12 text-center border-2 border-dashed border-zinc-800 rounded-xl text-zinc-500">
-          Empty roadmap. Items will be addable in the editor.
-        </div>
-      ) : (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-0.5">
-          {tree.map((n) => (
-            <NodeRowView key={n.id} node={n} depth={0} focusId={roadmap.focus_node_id} />
-          ))}
+      {notesOpen && (
+        <div className="space-y-1">
+          <textarea
+            autoFocus
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onBlur={() => notes !== roadmap.notes && editor.patchRoadmap({ notes })}
+            placeholder="Roadmap notes: goals, plan, reminders…"
+            className="w-full h-40 bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-200 font-mono focus:outline-none focus:border-zinc-600 resize-y"
+          />
+          <p className="text-[11px] text-zinc-600">Saves when you click outside the box.</p>
         </div>
       )}
-    </div>
-  )
-}
-
-function NodeRowView({ node, depth, focusId }: { node: TreeNode; depth: number; focusId: string | null }) {
-  const [open, setOpen] = useState(true)
-  const hasChildren = node.children.length > 0
-  const done = isDone(node)
-  const p = progressOf(node)
-
-  return (
-    <div>
-      <div className="flex items-start gap-2 py-1" style={{ paddingLeft: `${Math.min(depth, 6) * 20}px` }}>
-        <button
-          onClick={() => setOpen(!open)}
-          className={cn('mt-0.5 text-zinc-600 hover:text-zinc-300 cursor-pointer', !hasChildren && 'invisible')}
-        >
-          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
-        {done ? (
-          <CheckCircle2 className="h-4 w-4 mt-0.5 text-green-500 flex-shrink-0" />
-        ) : (
-          <Circle className={cn('h-4 w-4 mt-0.5 flex-shrink-0', p.done > 0 ? 'text-amber-300' : 'text-zinc-600')} />
-        )}
-        <div className="flex-1 min-w-0">
-          <span
-            className={cn(
-              hasChildren ? 'font-semibold text-zinc-100' : 'text-zinc-200',
-              done && !hasChildren && 'text-zinc-500 line-through',
-            )}
-          >
-            {node.title || <span className="text-zinc-600 italic">Untitled</span>}
-          </span>
-          {node.id === focusId && <Star className="inline h-3.5 w-3.5 ml-2 text-amber-200 fill-amber-200" />}
-          {node.description && <p className="text-xs text-zinc-500">{node.description}</p>}
-        </div>
-        {hasChildren && <span className="text-xs text-zinc-500 tabular-nums">{p.done}/{p.total}</span>}
-      </div>
-      {open && node.children.map((c) => <NodeRowView key={c.id} node={c} depth={depth + 1} focusId={focusId} />)}
-    </div>
-  )
-}
-
-function ChallengeGrid({ nodes, start }: { nodes: { id: string; day_number: number | null; is_done: boolean }[]; start: string | null }) {
-  const days = nodes.filter((n) => n.day_number !== null).sort((a, b) => a.day_number! - b.day_number!)
-  const todayIdx = start
-    ? Math.floor((Date.now() - new Date(start + 'T00:00:00').getTime()) / 86_400_000) + 1
-    : null
-
-  return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-      {todayIdx !== null && todayIdx >= 1 && todayIdx <= days.length && (
-        <p className="text-sm text-zinc-400 mb-3">Today is day {todayIdx}</p>
-      )}
-      <div className="grid grid-cols-10 gap-1.5">
-        {days.map((d) => (
-          <div
-            key={d.id}
-            title={`Day ${d.day_number}`}
-            className={cn(
-              'aspect-square rounded-md flex items-center justify-center text-[11px] tabular-nums border',
-              d.is_done
-                ? 'bg-green-600/30 border-green-700 text-green-200'
-                : d.day_number === todayIdx
-                  ? 'border-amber-300 text-amber-200'
-                  : 'border-zinc-800 text-zinc-600',
-            )}
-          >
-            {d.day_number}
-          </div>
-        ))}
-      </div>
     </div>
   )
 }

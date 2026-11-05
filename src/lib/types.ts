@@ -33,6 +33,14 @@ export interface NodeRow {
   day_number: number | null
 }
 
+export interface NodeLink {
+  id: string
+  node_id: string
+  title: string
+  url: string
+  created_at: string
+}
+
 export interface RoadmapSummary {
   id: string
   title: string
