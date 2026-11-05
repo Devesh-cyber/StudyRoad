@@ -1,4 +1,5 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '@/lib/authContext'
 import { Button } from '@/components/ui/button'
 import { LogIn, LogOut } from 'lucide-react'
@@ -27,7 +28,9 @@ export const ShellLayout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className="min-h-screen flex flex-col">
       <nav className="bg-zinc-900/80 border-b border-zinc-800 backdrop-blur-sm flex items-center justify-between px-6 py-4 sticky top-0 z-10">
-        <h1 className="text-xl font-bold tracking-tight">StudyRoad</h1>
+        <Link to="/" className="text-xl font-bold tracking-tight hover:text-amber-200 transition-colors">
+          StudyRoad
+        </Link>
         <Button variant="ghost" size="sm" onClick={signOut}>
           <LogOut className="h-4 w-4 mr-2" /> Sign Out
         </Button>
