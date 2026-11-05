@@ -8,6 +8,10 @@
 // create_roadmap_from_tree RPC, plus optional `suggestions`.
 // NOTHING is saved here: the frontend shows a preview and saves on confirm.
 //
+// Deploy with:  npx supabase functions deploy structure-roadmap --no-verify-jwt
+// (sign-in is checked inside the function, so gateway JWT checks are not needed;
+//  gateway rejections have no CORS headers and show up as "Failed to send a request")
+//
 // Secrets (set with `supabase secrets set ...`):
 //   GROQ_API_KEY  required
 //   GROQ_MODEL    optional, defaults to DEFAULT_MODEL below
@@ -18,11 +22,20 @@ const MAX_INPUT_CHARS = 20_000;
 const MAX_DEPTH = 50;
 const MAX_SUGGESTIONS = 8;
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// CORS: echo back whatever headers the browser asks for, so new supabase-js
+// headers never break the preflight.
+const BASE_ALLOWED_HEADERS = "authorization, x-client-info, apikey, content-type";
+let CORS: Record<string, string> = corsFor(null);
+
+function corsFor(req: Request | null): Record<string, string> {
+  const requested = req?.headers.get("Access-Control-Request-Headers");
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": requested ? `${BASE_ALLOWED_HEADERS}, ${requested}` : BASE_ALLOWED_HEADERS,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Max-Age": "86400",
+  };
+}
 
 // ---------- types ----------
 
@@ -220,6 +233,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 Deno.serve(async (req) => {
+  CORS = corsFor(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
